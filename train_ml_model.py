@@ -16,6 +16,8 @@ from sklearn.metrics import precision_score,recall_score,f1_score,accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MaxAbsScaler
 
+#Here you can specifiy a random data instance to train the ML model. If not arguement is given it will create a rando instance.
+#This allows you to repeat tests across a consistant data space.
 if len(sys.argv) < 2:
     rand = randrange(50)
 else:
@@ -26,6 +28,8 @@ nltk.download('punkt')
 nltk.download('wordnet')
 nltk.download('stopwords')
 
+#Test model: This code simply takes the training model and the data it's to be tested on, in the form [X_test, Y_test],
+# and reports back the macro averaged scores across precision, recall, f1-score and accuracy.
 def test_model(model, testdata):
     print("Beginning testing...")
     X_test = testdata[0]
@@ -48,6 +52,8 @@ def test_model(model, testdata):
 
 
 #RETRIEVING DATA---------------------------------------------------
+#This 'datafile_fict' specifices how many instances of each article type will be retrieved from their respective
+# folders. This can be changed if more data is included, or if some is removed.
 datafile_dict = {}
 datafile_dict["business"] = 510
 datafile_dict["entertainment"] = 386
@@ -63,8 +69,11 @@ data_politics_raw = []
 data_sport_raw = []
 data_tech_raw = []
 
+#Retrieve current working directory
 cwd = str(os.getcwd())
 
+#This for loop goes through each key in the 'datafile_dict' above and creates a list of paths
+# from which data will be retrieved and placed into seperate lists (one per category).
 for key in datafile_dict:
     paths = []
     num_data = datafile_dict[key]
@@ -103,6 +112,8 @@ data_sport = []
 data_tech = []
 
 #REMOVE REPLICATED DATA
+#The dataset contains some replicated data, thus needs to be checked 
+# and duplicates removed.
 
 for i, article1 in enumerate(data_business_raw):
   for j, article2 in enumerate(data_business_raw):
@@ -149,6 +160,9 @@ print("Number of sport articles: ", len(data_sport_raw))
 print("Number of tech articles: ", len(data_tech_raw))
 print("Number of deleted duplicate articles: ", count,"\n")
 
+#Create labels to be used in training. Will take the form, [num_arricles, 1], where each instance 
+# will be 0,1,2,3 or 4 corresponding to business, entertaiment, politics, sport and tech articles 
+# respectively
 labels = []
 
 for i in range(len(data_business_raw)):
@@ -171,7 +185,9 @@ labels = np.asarray(labels)
 all_data_raw = []
 all_data_raw = (data_business_raw + data_entertainment_raw + data_politics_raw + data_sport_raw + data_tech_raw)
 
+#Download stop-words for filtering tokens later. 
 stopwords=set(nltk.corpus.stopwords.words('english'))
+#Custom stop words may be added as below:
 stopwords.add(".")
 stopwords.add(",")
 stopwords.add("``")
@@ -189,52 +205,55 @@ print("Beginning feature creation...")
 
 #CREATE PAIRS FEATURE
 all_pairs_tokens = []
-lemmatizer = nltk.stem.WordNetLemmatizer()
+lemmatizer = nltk.stem.WordNetLemmatizer() #Create lemmatizer object to lemmatize data
 
-for article in all_data_raw:
-  list_tokens = []
-  for line in article:
-    sentence_split = nltk.tokenize.sent_tokenize(str(line))
-    for sentence in sentence_split:
-      list_tokens_sentence = nltk.tokenize.word_tokenize(sentence.translate(str.maketrans('', '', string.punctuation))) #Strips away punctation
-      for i, token in enumerate(list_tokens_sentence):
-        if i >= 1:
-          pair = list_tokens_sentence[i-1] + " " + list_tokens_sentence[i] 
-          list_tokens.append(lemmatizer.lemmatize(pair.lower()))
-  all_pairs_tokens.append(list_tokens)
+for article in all_data_raw: #loop thourgh each article
+  list_tokens = [] #create empty list of tokens
+  for line in article: #loop through each line in article
+    sentence_split = nltk.tokenize.sent_tokenize(str(line)) #split line into sentences
+    for sentence in sentence_split: #loop through each sentence
+      #1) remove punctuation from sentence 2) split into individual tokens
+      list_tokens_sentence = nltk.tokenize.word_tokenize(sentence.translate(str.maketrans('', '', string.punctuation)))
+      for i, token in enumerate(list_tokens_sentence): #loop through all tokens from previous sentence
+        if i >= 1: #if not the first token in list (this would cause indexing error)
+          pair = list_tokens_sentence[i-1] + " " + list_tokens_sentence[i]  #Add to list each pair of tokens
+          list_tokens.append(lemmatizer.lemmatize(pair.lower())) #1) make pair lower case and lemmatize
+  all_pairs_tokens.append(list_tokens) #append all tokens from article to 'all_pairs_tokens'
 
-mf_all_pairs = None
-kbest_all_pairs = 1000
+mf_all_pairs = None #Variable to control max number of most freq. pairs included in vector.
+kbest_all_pairs = 1000 #Variable to control max K-best dimensionality
 count_vector_all_pairs = CountVectorizer(input='content',decode_error='ignore',
                                stop_words=stopwords, 
                                max_features=mf_all_pairs,
-                               analyzer=lambda x: x)
-feature_all_pairs = count_vector_all_pairs.fit_transform(all_pairs_tokens)
-tfidf_transformer = TfidfTransformer().fit(feature_all_pairs) #By default this is using the 'l2' norm
-features_all_pairs_final = tfidf_transformer.transform(feature_all_pairs).toarray()
-features_all_pairs_final_kb = SelectKBest(chi2, k=200).fit_transform(features_all_pairs_final, labels)
+                               analyzer=lambda x: x) #Define vectorizer object
+feature_all_pairs = count_vector_all_pairs.fit_transform(all_pairs_tokens) #Using on 'all_pairs_tokens' to get back numerical vector for training.
+tfidf_transformer = TfidfTransformer().fit(feature_all_pairs) #Define and fit 'tfidf' normaliser to data, by default this is using the 'l2' norm
+features_all_pairs_final = tfidf_transformer.transform(feature_all_pairs).toarray() #normalise data
+features_all_pairs_final_kb = SelectKBest(chi2, k=200).fit_transform(features_all_pairs_final, labels) #Perform dimensionality reduction with SelectKBest
 #--------------------------------------------------------------------
 
 #CREATE LENGTH FEATURE--------------------------------------------
 feature_length = []
 
-for article in all_data_raw:
-  list_tokens = []
-  for line in article:
-    sentence_split = nltk.tokenize.sent_tokenize(str(line))
-    for sentence in sentence_split:
-      list_tokens_sentence = nltk.tokenize.word_tokenize(sentence.translate(str.maketrans('', '', string.punctuation))) #Strips away punctation
-      for token in list_tokens_sentence:
-        list_tokens.append(token.lower())
-  feature_length.append(len(list_tokens))
+for article in all_data_raw:#loop thourgh each article
+  list_tokens = []#create empty list of tokens
+  for line in article:#loop through each line in article
+    sentence_split = nltk.tokenize.sent_tokenize(str(line))#split line into sentences
+    for sentence in sentence_split:#loop through each sentence
+      #1) remove punctuation from sentence 2) split into individual tokens
+      list_tokens_sentence = nltk.tokenize.word_tokenize(sentence.translate(str.maketrans('', '', string.punctuation)))
+      for token in list_tokens_sentence: #loop through all tokens from previous sentence
+        list_tokens.append(token.lower()) #append tokens to list of temporary tokens
+  feature_length.append(len(list_tokens)) #count length of article and append number of 'feature_length'
 
-feature_length = np.asarray(feature_length)
-scaler = MaxAbsScaler().fit(feature_length.reshape(-1,1))
-feature_length_final = scaler.transform(feature_length.reshape(-1,1))
+feature_length = np.asarray(feature_length) #convert to array
+scaler = MaxAbsScaler().fit(feature_length.reshape(-1,1)) #fit MaxAbsScaler scaler
+feature_length_final = scaler.transform(feature_length.reshape(-1,1)) #normalise data
 #--------------------------------------------------------------
 
 
 #CREATE SINGLES FEATURE----------------------------------------
+#Process is identical to PAIRS of features
 all_tokens = []
 lemmatizer = nltk.stem.WordNetLemmatizer()
 
@@ -267,14 +286,16 @@ if sys.argv != None:
 else:
     rand = sys.argv
 #Note, random state '26' was used to produce the results in the report
+#Append features to single vector
 feature_second = np.append(feature_final_kb, features_all_pairs_final_kb, axis=1)
 feature_second = np.append(feature_second, feature_length_final, axis=1)
 
+#Create 70/15/15 training, dev, test sets
 X_train, X_test, Y_train, Y_test = train_test_split(feature_second, labels, test_size=0.3, random_state=rand)
 X_test, X_dev, Y_test, Y_dev = train_test_split(X_test, Y_test, test_size=0.5, random_state=rand)
 print("Beginning model training...")
-model = sklearn.svm.SVC(kernel='rbf', gamma='scale')
-model.fit(X_train, Y_train)
+model = sklearn.svm.SVC(kernel='rbf', gamma='scale') #define model
+model.fit(X_train, Y_train) #Train model
 print("Model trained.\n")
 print("Below is the test results using the development set:")
 p, r, f, a = test_model(model, [X_dev, Y_dev])
